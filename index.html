@@ -9,8 +9,8 @@
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('nlv2_')) { const n = 'nlv3_' + k.slice(5); if (localStorage.getItem(n) === null) localStorage.setItem(n, localStorage.getItem(k)); } } } catch (e) { }
   </script>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem('nlv3_theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch (e) { }</script>
-  <link rel="stylesheet" href="shared/base.css?v=202610081554">
-  <link rel="stylesheet" href="cards.css?v=202610081554">
+  <link rel="stylesheet" href="shared/base.css?v=202610121252">
+  <link rel="stylesheet" href="cards.css?v=202610121252">
 </head>
 <body data-layout="cards">
   <header class="topbar">
@@ -23,6 +23,7 @@
     <button class="btn" id="arrange">⇶ Auto-arrange</button>
     <button class="btn" id="fit">⤢ Fit</button>
     <button class="btn" id="linesBtn" title="Show or hide the lines between cards (the “see assembly” links still jump to each card)">⤳ Lines</button>
+    <label class="btn tb-sel" title="Weights: pick Metric (g / kg) or Imperial (oz / lb), then Auto (switches to kg above 999 g, or to lb from 16 oz) or one fixed unit. Prices follow: $/kg or $/lb. Saved values are always grams and $/kg">Units <select id="unitSys"><option value="metric">Metric (g / kg)</option><option value="imperial">Imperial (oz / lb)</option></select><select id="unitMode"></select></label>
     <label class="btn tb-sel" title="How the Scaling button on each card works: flip the card to a scaling side, or hide the building columns on the same card">Scaling view <select id="scaleStyle"><option value="flip">Flip card</option><option value="hide">Hide columns</option></select></label>
     <button class="btn" id="toggleNut">All facts ▸</button>
     <button class="btn" id="addCard" title="Add an unconnected card to this assembly">＋ Add card</button>
@@ -91,8 +92,8 @@
     </section>
     <aside class="nut" id="nut"></aside>
   </main>
-  <script src="shared/data.js?v=202610081554"></script>
-  <script src="shared/engine.js?v=202610081554"></script>
-  <script src="cards.js?v=202610081554"></script>
+  <script src="shared/data.js?v=202610121252"></script>
+  <script src="shared/engine.js?v=202610121252"></script>
+  <script src="cards.js?v=202610121252"></script>
 </body>
 </html>

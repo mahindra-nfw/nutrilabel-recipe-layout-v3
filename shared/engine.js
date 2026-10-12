@@ -62,7 +62,7 @@ NL.ingredientForm = function (initialName = '') {
         <label class="nif-f"><span>Category</span><select name="cat">${cats}</select></label>
         <label class="nif-f"><span>Vendor (optional)</span><input name="vendor" placeholder="e.g. Sysco"></label>
       </div>
-      <label class="nif-f"><span>Price per kg in $ (optional)</span><input name="price" inputmode="decimal" placeholder="e.g. 4.50"></label>
+      <label class="nif-f"><span>Price per ${NL.pUnit()} in $ (optional)</span><input name="price" inputmode="decimal" placeholder="e.g. 4.50"></label>
       <div class="nif-h">Nutrition per 100 g <small>blank = 0</small></div>
       <div class="nif-grid">${nut}</div>
       <div class="nl-prompt-btns"><button type="submit" class="btn primary">Save ingredient</button><button type="button" class="btn ghost nl-prompt-cancel">Cancel</button></div>
@@ -77,7 +77,7 @@ NL.ingredientForm = function (initialName = '') {
       if (NL.INGREDIENTS.some(i => i.name.toLowerCase() === name.toLowerCase()) && !confirm(`An ingredient called "${name}" already exists. Create another one anyway?`)) return;
       const n = NL.NUTRIENTS.map((_, k) => Math.max(0, parseFloat(f.querySelector(`[data-n="${k}"]`).value) || 0));
       const price = NL.parseNum(f.elements.price.value);
-      done(NL.addIngredient({ id: NL.uid('c'), name, cat: f.elements.cat.value, vendor: f.elements.vendor.value.trim() || null, n, custom: true, price: isFinite(price) && price >= 0 ? price : null }));
+      done(NL.addIngredient({ id: NL.uid('c'), name, cat: f.elements.cat.value, vendor: f.elements.vendor.value.trim() || null, n, custom: true, price: isFinite(price) && price >= 0 ? NL.pIn(price) : null }));
     };
     ov.querySelector('.nl-prompt-cancel').onclick = () => done(null);
     ov.addEventListener('pointerdown', e => { if (e.target === ov) done(null); });
@@ -160,6 +160,46 @@ NL.fmt = function (n, d = 1) {
   const r = Math.round(n * 10 ** d) / 10 ** d;
   return r.toLocaleString(undefined, { maximumFractionDigits: d });
 };
+// ---- display units: weights are always stored in grams and prices per kg.
+// The chosen units only change what is shown and typed (so data for a backend stays in g and $/kg).
+// System: metric (g / kg) or imperial (oz / lb). Mode: 'auto' (small unit, switching to the big one at 1000 g or 16 oz) or one fixed unit.
+NL.UNITS = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 };
+NL.UNIT_NAMES = { g: 'grams', kg: 'kilograms', oz: 'ounces', lb: 'pounds' };
+NL.unitSys = 'metric'; NL.unitMode = 'auto';
+try {
+  const m = localStorage.getItem('nlv3_unit'), s = localStorage.getItem('nlv3_unit_sys');
+  if (s === 'metric' || s === 'imperial') NL.unitSys = s;
+  else if (m === 'oz' || m === 'lb') NL.unitSys = 'imperial';
+  if (m === 'auto' || NL.UNITS[m]) NL.unitMode = m;
+  if (NL.unitMode !== 'auto' && (NL.unitSys === 'metric') !== (NL.unitMode === 'g' || NL.unitMode === 'kg')) NL.unitMode = 'auto';
+} catch { }
+NL.SYS_UNITS = { metric: ['g', 'kg'], imperial: ['oz', 'lb'] };
+NL.setUnits = (sys, mode) => {
+  if (NL.SYS_UNITS[sys]) NL.unitSys = sys;
+  NL.unitMode = mode === 'auto' || NL.SYS_UNITS[NL.unitSys].includes(mode) ? mode : 'auto';
+  try { localStorage.setItem('nlv3_unit_sys', NL.unitSys); localStorage.setItem('nlv3_unit', NL.unitMode); } catch { }
+};
+// the unit used to show this many grams
+NL.unitFor = g => {
+  if (NL.unitMode !== 'auto') return NL.unitMode;
+  const [small, big] = NL.SYS_UNITS[NL.unitSys];
+  return Math.abs(+g || 0) >= NL.UNITS[big] - 1e-9 ? big : small; // 1000 g -> kg, 16 oz (1 lb) -> lb
+};
+// one unit for a set of weights shown together (e.g. a Compare row): the unit of the largest
+NL.unitForAll = gs => NL.unitFor(Math.max(0, ...gs.filter(g => g != null).map(g => Math.abs(g))));
+NL.unitLabel = () => NL.unitMode === 'auto' ? NL.SYS_UNITS[NL.unitSys][0] : NL.unitMode; // short label, e.g. on the g | $ switch
+NL.fromU = (v, u) => v * NL.UNITS[u || NL.unitFor(0)];   // typed value -> grams
+const wNum = (g, u, d) => { const v = g / NL.UNITS[u]; return u === 'g' ? NL.fmt(v, d) : NL.fmt(v, Math.abs(v) < 1 ? 4 : u === 'oz' ? 2 : 3); };
+// a weight as text: "12.5 g", "1.25 kg", "3.5 oz", "2.205 lb"
+NL.ws = (g, d = 2) => { const u = NL.unitFor(g); return wNum(g, u, d) + ' ' + u; };
+// number + small unit tag, for table cells (mid goes between them, e.g. '</b>')
+NL.wu = (g, mid = '') => { const u = NL.unitFor(g); return `${wNum(g, u, 2)}${mid}<span class="u">${u}</span>`; };
+// value for a weight box in unit u (grams round to d decimals, other units to 5)
+NL.inUnit = (g, u, d) => g == null || g === '' ? '' : u === 'g' ? +(+g).toFixed(d ?? 3) : +((+g) / NL.UNITS[u]).toFixed(5);
+// prices: $/kg stored; shown and typed per lb for imperial
+NL.pUnit = () => NL.unitSys === 'imperial' ? 'lb' : 'kg';
+NL.pOut = perKg => NL.unitSys === 'imperial' ? perKg * 0.45359237 : perKg;
+NL.pIn = v => NL.unitSys === 'imperial' ? v / 0.45359237 : v;
 NL.pct = (part, whole) => whole > 0 ? NL.fmt(part / whole * 100, 1) + '%' : '0%';
 NL.esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 NL.uid = (p = 'n') => p + Math.random().toString(36).slice(2, 8);
