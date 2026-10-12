@@ -13,6 +13,14 @@
   let scaleStyle = 'flip'; try { if (localStorage.getItem('nlv3_scale_style') === 'hide') scaleStyle = 'hide'; } catch { }
   const fieldUnit = {}; // data-fk -> unit, while that weight box has focus
   const wf = (fk, g, d) => { const u = fieldUnit[fk] || NL.unitFor(g); return { u, v: NL.inUnit(g, u, d), a: `data-u="${u}"` }; };
+  // board: the selected card (the one you clicked or are dragging) sits on top of the others
+  let topId = null;
+  const zOf = id => id === topId ? 1 : 0;
+  const raise = id => {
+    if (topId === id) return;
+    topId = id;
+    boardCardsEl.querySelectorAll('.rcard').forEach(el => { el.style.zIndex = zOf(el.dataset.id); });
+  };
   const flipIn = {}; // card id -> 1 while its flip-in animation should play
   const fwErr = {}; // card id -> message while the typed final weight is invalid
   const amtErr = {}; // 'card:row' -> message while a typed ingredient weight is invalid
@@ -180,7 +188,7 @@
     }).join('') || `<tr class="rc-empty"><td colspan="${ncol}">No ingredients yet — use the buttons below or drag from the library</td></tr>`;
     const kcal = Math.round(c.perG[0] * (isRoot ? c.yielded : 100));
     const extra = scaling && !flip ? Math.max(0, pins.length - 2) : 0;
-    return `<div class="rcard ${isRoot ? 'final' : ''} ${a.collapsed ? 'rc-collapsed' : ''} ${!isRoot && !parents.length ? 'orphan' : ''} ${scaling ? 'face-scale' : 'face-build'} ${flip ? 'flipface' : ''} ${flipIn[id] ? 'flip-in' : ''}" data-id="${id}" style="${view === 'sheet' ? `--depth:${depthMap[id] || 0};` : `left:${a.x}px;top:${a.y}px;`}--c:${colorOf(id)};--extra:${extra}">
+    return `<div class="rcard ${isRoot ? 'final' : ''} ${a.collapsed ? 'rc-collapsed' : ''} ${!isRoot && !parents.length ? 'orphan' : ''} ${scaling ? 'face-scale' : 'face-build'} ${flip ? 'flipface' : ''} ${flipIn[id] ? 'flip-in' : ''}" data-id="${id}" style="${view === 'sheet' ? `--depth:${depthMap[id] || 0};` : `left:${a.x}px;top:${a.y}px;z-index:${zOf(id)};`}--c:${colorOf(id)};--extra:${extra}">
       ${isRoot ? '' : `<span class="port" data-port="${id}" title="Drag onto the assembly that uses this card"></span>`}
       <div class="rc-top" data-drag>
         <div class="rc-kick-row"><div class="rc-kicker">${kicker}</div>${kind}</div>
@@ -492,7 +500,7 @@
   function goto(id) {
     const a = A(id), el = cardsEl.querySelector(`[data-id="${id}"]`); if (!a || !el) return;
     if (view === 'sheet') el.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    else vp.centerOn(a.x + CARDW / 2, a.y + Math.min(el.offsetHeight, 500) / 2, Math.max(vp.v.s, 0.7));
+    else { raise(id); vp.centerOn(a.x + CARDW / 2, a.y + Math.min(el.offsetHeight, 500) / 2, Math.max(vp.v.s, 0.7)); }
     setTimeout(() => { const e2 = cardsEl.querySelector(`[data-id="${id}"]`); e2?.classList.remove('flash'); void e2?.offsetWidth; e2?.classList.add('flash'); }, 150);
   }
 
@@ -1019,6 +1027,7 @@
   });
 
   boardCardsEl.addEventListener('pointerdown', e => {
+    { const c = e.target.closest('.rcard'); if (c) raise(c.dataset.id); }
     const port = e.target.closest('[data-port]');
     if (port && e.button === 0) {
       const id = port.dataset.port, a = A(id);
@@ -1122,6 +1131,18 @@
   });
   document.addEventListener('keydown', e => {
     const d = e.target.dataset;
+    // keyboard flow for chefs: Enter in a weight box goes to the next row's weight, or on the last row opens the ingredient search again
+    if (e.key === 'Enter' && d?.amt && !e.target.readOnly && !amtErr[d.amt]) {
+      e.preventDefault();
+      const [id, i] = d.amt.split(':');
+      e.target.blur();
+      setTimeout(() => {
+        if (cardsEl.querySelector(`[data-amt="${id}:${+i + 1}"]`)) return focusAmt(id, +i + 1);
+        const add = cardsEl.querySelector(`[data-addi="${id}"]`);
+        if (add) openPicker(id, add, 'ing');
+      }, 0);
+      return;
+    }
     if (e.key === 'Enter' && d && (d.amt || d.title || d.fw || d.bk || d.bscale || d.wscale || d.pkn || d.pkc || d.pkd || d.lbf)) e.target.blur();
     if (e.key === 'Enter' && d?.step) { const [id, i] = d.step.split(':'); A(id).steps.splice(+i + 1, 0, ''); render(); commit(); cardsEl.querySelector(`[data-step="${id}:${+i + 1}"]`)?.focus(); }
   });
