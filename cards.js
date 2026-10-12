@@ -1325,8 +1325,9 @@
     sysSel.value = NL.unitSys; modeSel.value = NL.unitMode;
   };
   fillModes();
-  sysSel.onchange = () => { NL.setUnits(sysSel.value, 'auto'); fillModes(); render(); NL.toast(`${sysSel.value === 'metric' ? 'Metric (g / kg)' : 'Imperial (oz / lb)'}. Choose Auto or one fixed unit in the next box`); };
-  modeSel.onchange = () => { NL.setUnits(NL.unitSys, modeSel.value); render(); };
+  const unitsChanged = () => { for (const k in fieldUnit) delete fieldUnit[k]; render(); }; // boxes take the new units at once
+  sysSel.onchange = () => { NL.setUnits(sysSel.value, 'auto'); fillModes(); unitsChanged(); NL.toast(`${sysSel.value === 'metric' ? 'Metric (g / kg)' : 'Imperial (oz / lb)'}. Choose Auto or one fixed unit in the next box`); };
+  modeSel.onchange = () => { NL.setUnits(NL.unitSys, modeSel.value); unitsChanged(); };
   const styleSel = $('#scaleStyle'); styleSel.value = scaleStyle;
   styleSel.onchange = () => { scaleStyle = styleSel.value === 'hide' ? 'hide' : 'flip'; try { localStorage.setItem('nlv3_scale_style', scaleStyle); } catch { } render(); };
   $('#toggleNut').onclick = () => {
