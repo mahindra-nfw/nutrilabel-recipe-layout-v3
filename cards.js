@@ -50,8 +50,28 @@
   const wouldCycle = (parent, child) => parent === child || descendants(child).has(parent);
 
   // ---------- rendering ----------
+  // The Final card's pinned columns flow down: for each one, how many grams of every sub-assembly it needs
+  // (Final amount x its scale, then through each sub-assembly's own recipe and cooking loss). Read-only.
+  let finFlows = [];
+  const pinLabel = p => p.mode === 'portion' ? `${NL.fmt(p.count, 2)} × ${NL.ws(p.size, 1)}` : p.mode === 'base' ? `Base ${NL.ws(p.target, 1)}` : `Yield ${NL.ws(p.target, 1)}`;
+  function computeFlows() {
+    finFlows = [];
+    if (!hasFinal()) return;
+    const root = A(S.root), rc = calc[S.root];
+    (root.scalePins || []).forEach((p, k) => {
+      const need = {};
+      const walk = (id, f) => A(id).items.forEach(it => {
+        const sid = subIdOf(it.ref); if (!sid || !A(sid) || !(calc[sid]?.yielded > 0)) return;
+        const g = (+it.amount || 0) * f;
+        need[sid] = (need[sid] || 0) + g;
+        walk(sid, g / calc[sid].yielded);
+      });
+      walk(S.root, pinFactor(p, rc, baseTotal(root)));
+      finFlows.push({ key: 'fin-' + (p.id || k), p, need });
+    });
+  }
   function paintLeft() {
-    calc = NL.calc(S); cost = NL.cost(S, calc);
+    calc = NL.calc(S); cost = NL.cost(S, calc); computeFlows();
     if (view === 'sheet') {
       const ord = sheetOrder(); orderIdx = Object.fromEntries(ord.map((id, k) => [id, k])); depthMap = depths();
       cardsEl.innerHTML = ord.length ? ord.map(cardHTML).join('') : SHEET_EMPTY;
@@ -124,7 +144,8 @@
     }) : [];
     const subG = idx => subUse[idx]?.on ? subUse[idx].g : +a.items[idx].amount || 0;
     const showSub = subUse.some(u => u?.on);
-    const ncol = 6 + (showSc ? 1 : 0) + (showSub ? 1 : 0) + vp.length, RO = scaling ? 'readonly tabindex="-1" ' : ''; // the Scaling side never edits the recipe
+    const flows = !isRoot && scaling ? finFlows.filter(fl => fl.need[id] > 0) : [];
+    const ncol = 6 + (showSc ? 1 : 0) + (showSub ? 1 : 0) + flows.length + vp.length, RO = scaling ? 'readonly tabindex="-1" ' : ''; // the Scaling side never edits the recipe
     // cost of the batch at each scaling (portion scalings also show cost per portion)
     const star = cc.missing ? '*' : '';
     const costCellFor = (f, p, k) => `<td class="r scl${p ? pcls(k) : ''}">${NL.money(costAll * f)}${allStar}${(p || sc).mode === 'portion' ? `<div class="scl-pp">${NL.money(costAll * f / ((p || sc).count || 1))} / portion</div>` : ''}</td>`;
@@ -134,8 +155,8 @@
     const allMissing = cc.missing + pkMissing + lbMissing, allStar = allMissing ? '*' : '', costAll = cc.batch + pkTotal + lbTotal;
     const costTip = pk.length || lb.length ? `Ingredients ${NL.money(cc.batch)}${pk.length ? ` + packaging ${NL.money(pkTotal)}` : ''}${lb.length ? ` + labor ${NL.money(lbTotal)}` : ''}${allMissing ? `. ${allMissing} item(s) have no price yet` : ''}` : (cc.missing ? `${cc.missing} ingredient(s) have no price yet` : '');
     // each scaled column shows weights (g) or costs ($); the live column keeps its choice on the card, pinned ones on the pin
-    const showCost = k => !!(k === 'sub' ? a.subShowCost : k < 0 ? a.scaleShowCost : pins[k]?.showCost);
-    const scCols = [...(showSc ? [{ f: sc.f, k: -1, cls: '' }] : []), ...(showSub ? [{ f: 1, k: 'sub', cls: ' fromsub' }] : []), ...vp.map(({ p, k }) => ({ f: pinF(p), k, cls: pcls(k) }))];
+    const showCost = k => !!(String(k).startsWith('fin-') ? a.finShowCost?.[k] : k === 'sub' ? a.subShowCost : k < 0 ? a.scaleShowCost : pins[k]?.showCost);
+    const scCols = [...(showSc ? [{ f: sc.f, k: -1, cls: '' }] : []), ...(showSub ? [{ f: 1, k: 'sub', cls: ' fromsub' }] : []), ...flows.map(fl => ({ f: fl.need[id] / c.yielded, k: fl.key, cls: ' fromfinal' })), ...vp.map(({ p, k }) => ({ f: pinF(p), k, cls: pcls(k) }))];
     const money1 = (usd, f) => usd == null ? '<span class="faint">—</span>' : NL.money(usd.v * f) + (usd.miss ? '*' : '');
     // alt = { html, usd }: what the Sub portions column shows for this row (otherwise the row as typed)
     const scCells = (wt, usd, alt) => scCols.map(({ f, k, cls }) => `<td class="r scl${cls}">${k === 'sub' && alt ? (showCost(k) ? money1(alt.usd, 1) : alt.html) : showCost(k) ? money1(usd, f) : wt(f)}</td>`).join('');
@@ -157,7 +178,7 @@
         <td class="r lab-rate bk">$<input ${RO}class="num" inputmode="decimal" data-lbf="${id}:${k}:rate" data-fk="lbr-${id}-${k}" value="${r.rate ?? ''}" placeholder="—" title="Rate per hour"><span class="u">/h</span></td>
         <td class="r cost" title="${r.minutes ?? '?'} min × ${r.people ?? 1} × ${r.rate != null ? NL.money(r.rate) : '?'}/h">${laborCost(r) == null ? '—' : NL.money(laborCost(r))}</td>
         ${lbScaled(r)}<td class="x"></td></tr>`).join('') : '';
-    const costRow = () => `<tr class="rc-costrow" ${cc.missing ? `title="${cc.missing} ingredient(s) have no price yet, so these are minimums"` : ''}><td>Cost</td><td class="r w" ${costTip ? `title="${costTip}"` : ''}>${NL.money(costAll)}${allStar}</td><td class="pc"></td><td class="bk"></td><td class="cost"></td>${showSc ? costCellFor(sc.f) : ''}${showSub ? `<td class="r scl fromsub">${NL.money(subAll)}${allStar}<div class="scl-pp">${NL.money(Math.abs(subAll - costAll))} ${subAll >= costAll ? 'more' : 'less'} / portion</div></td>` : ''}${vp.map(({ p, k }) => costCellFor(pinF(p), p, k)).join('')}<td></td></tr>`;
+    const costRow = () => `<tr class="rc-costrow" ${cc.missing ? `title="${cc.missing} ingredient(s) have no price yet, so these are minimums"` : ''}><td>Cost</td><td class="r w" ${costTip ? `title="${costTip}"` : ''}>${NL.money(costAll)}${allStar}</td><td class="pc"></td><td class="bk"></td><td class="cost"></td>${showSc ? costCellFor(sc.f) : ''}${showSub ? `<td class="r scl fromsub">${NL.money(subAll)}${allStar}<div class="scl-pp">${NL.money(Math.abs(subAll - costAll))} ${subAll >= costAll ? 'more' : 'less'} / portion</div></td>` : ''}${flows.map(fl => `<td class="r scl fromfinal">${NL.money(costAll * fl.need[id] / c.yielded)}${allStar}${fl.p.mode === 'portion' ? `<div class="scl-pp">${NL.money(costAll * fl.need[id] / c.yielded / (fl.p.count || 1))} / final portion</div>` : ''}</td>`).join('')}${vp.map(({ p, k }) => costCellFor(pinF(p), p, k)).join('')}<td></td></tr>`;
     const scCell = (g, usd, alt) => scCells(f => `${NL.wu(g * f)}`, usd, alt);
     const subCost = idx => { const it = a.items[idx], sid = subIdOf(it.ref), k = sid ? cost[sid] : null;
       if (!sid) return rowCost(it); return k ? { v: subG(idx) * k.perG, miss: !!k.missing } : null; };
@@ -212,7 +233,7 @@
         </div>
       </div>
       <div class="rc-body">
-        <table class="rc-tbl"><thead><tr><th>Ingredient</th><th class="r hc-w">Weight</th><th class="r hc-pc">Relative %</th><th class="r hc-bk" title="Baker's percentage: weight relative to the base ingredient (100%)">Baker %</th><th class="r hc-cost" title="Cost of this row: price per kg × weight">Cost</th>${showSc ? `<th class="r scl" title="Weights for the target below; your Weight column is not changed">Scaled<div class="scl-ctl">${scTog(-1)}</div></th>` : ''}${showSub ? `<th class="r scl fromsub" title="One portion of this assembly using each sub-assembly's portion in use (chosen on each sub-assembly card). Your weights here are not changed">Sub portions<div class="scl-ctl">${scTog('sub')}</div></th>` : ''}${vp.map(({ p, k }) => `<th class="r scl${pcls(k)}" title="Pinned: ${p.mode === 'portion' ? 'scale by portion' : 'scale by yield'}">${p.mode === 'portion' ? `${NL.ws(p.size, 1)} × ${NL.fmt(p.count, 2)}` : p.mode === 'base' ? `Base ${NL.ws(p.target, 1)}` : `Yield ${NL.ws(p.target, 1)}`}<button class="scl-unpin" data-sclunpin="${id}:${k}" title="Remove this column">×</button><div class="scl-ctl">${scTog(k)}</div></th>`).join('')}<th></th></tr></thead><tbody>${rows}${pkRows}${lbRows}</tbody>
+        <table class="rc-tbl"><thead><tr><th>Ingredient</th><th class="r hc-w">Weight</th><th class="r hc-pc">Relative %</th><th class="r hc-bk" title="Baker's percentage: weight relative to the base ingredient (100%)">Baker %</th><th class="r hc-cost" title="Cost of this row: price per kg × weight">Cost</th>${showSc ? `<th class="r scl" title="Weights for the target below; your Weight column is not changed">Scaled<div class="scl-ctl">${scTog(-1)}</div></th>` : ''}${showSub ? `<th class="r scl fromsub" title="One portion of this assembly using each sub-assembly's portion in use (chosen on each sub-assembly card). Your weights here are not changed">Sub portions<div class="scl-ctl">${scTog('sub')}</div></th>` : ''}${flows.map(fl => `<th class="r scl fromfinal" title="Scaled from the Final assembly (${NL.esc(A(S.root).name)}): its column ${pinLabel(fl.p)} needs ${NL.ws(fl.need[id])} of this card. Change it on the Final card">From Final<div class="fin-l">${pinLabel(fl.p)}</div><div class="scl-ctl">${scTog(fl.key)}</div></th>`).join('')}${vp.map(({ p, k }) => `<th class="r scl${pcls(k)}" title="Pinned: ${p.mode === 'portion' ? 'scale by portion' : 'scale by yield'}">${p.mode === 'portion' ? `${NL.ws(p.size, 1)} × ${NL.fmt(p.count, 2)}` : p.mode === 'base' ? `Base ${NL.ws(p.target, 1)}` : `Yield ${NL.ws(p.target, 1)}`}<button class="scl-unpin" data-sclunpin="${id}:${k}" title="Remove this column">×</button><div class="scl-ctl">${scTog(k)}</div></th>`).join('')}<th></th></tr></thead><tbody>${rows}${pkRows}${lbRows}</tbody>
           ${a.items.length ? `<tfoot>${bset.length > 1 || a.baseName ? `<tr class="rc-base"><td><span class="rc-base-nm" data-basename="${id}" title="Click to rename the base">${NL.esc(bname)}${a.baseName ? ' <small>(Base)</small>' : ''}</span></td><td class="r w">${NL.wu(baseAmt)}</td><td class="r pc">${NL.pct(baseAmt, c.batch)}</td><td class="r bk">100%</td><td class="r cost"></td>${scCell(baseAmt)}<td class="x"><button class="rc-del rc-base-x" data-delbase="${id}" title="Remove this base (clears its name and B marks)">×</button></td></tr>` : ''}<tr class="rc-tot"><td>Total</td><td class="r w">${NL.wu(c.batch)}${gross(c.batch)}</td><td class="r pc">100%</td><td class="r bk" title="Total formula percentage">${baseAmt > 0 ? NL.fmt(c.batch / baseAmt * 100, 1) + '%' : `<span class="bk-hint">${bset.length ? 'base has no weight' : 'press B to pick a base'}</span>`}</td><td class="r cost" ${costTip ? `title="${costTip}"` : ''}>${NL.money(costAll)}${allStar}</td>${scCells(f => `${NL.wu(c.batch * f)}${gross(c.batch, f)}`, { v: costAll, miss: allMissing > 0 }, { html: `${NL.wu(subFood)}${gross(subFood)}`, usd: { v: subAll, miss: allMissing > 0 } })}<td></td></tr>${showSc || vp.length ? costRow() : ''}</tfoot>` : ''}</table>
         <div class="rc-sec rc-fw bo ${fwErr[id] ? 'bad' : ''}">
           <label>${isRoot ? 'Final portion weight' : 'Final weight after cooking'} <input class="num" inputmode="decimal" data-fk="fw-${id}" data-fw="${id}" ${wf(`fw-${id}`, c.yielded, 1).a} value="${wf(`fw-${id}`, c.yielded, 1).v}" placeholder="${NL.inUnit(c.batch, wf(`fw-${id}`, c.yielded).u, 1)}"> ${wf(`fw-${id}`, c.yielded).u}</label>
@@ -854,7 +875,7 @@
     document.addEventListener(type, e => { const s = sideOf(e.target); if (s) useSide(s); }, true);
 
   function paintRight() {
-    calc = NL.calc(S); cost = NL.cost(S, calc);
+    calc = NL.calc(S); cost = NL.cost(S, calc); computeFlows();
     const ord = sheetOrder(); orderIdx = Object.fromEntries(ord.map((id, k) => [id, k])); depthMap = depths();
     if (split.card && !S.asm[split.card]) split.card = '';
     const ids = split.card ? [split.card] : ord;
@@ -1217,6 +1238,7 @@
       render(); saveCur(); hist.sync(); return;
     }
     if ((b = q('[data-sclshow]'))) {
+      { const [id, k, v] = b.dataset.sclshow.split(':'); if (k.startsWith('fin-')) { const a = A(id); a.finShowCost = a.finShowCost || {}; if (v === '$') a.finShowCost[k] = true; else delete a.finShowCost[k]; if (!Object.keys(a.finShowCost).length) delete a.finShowCost; render(); saveCur(); hist.sync(); return; } }
       const [id, k, v] = b.dataset.sclshow.split(':'), a = A(id), t = k === 'sub' || +k < 0 ? a : a.scalePins?.[+k], key = k === 'sub' ? 'subShowCost' : +k < 0 ? 'scaleShowCost' : 'showCost';
       if (!t) return;
       if (v === '$') t[key] = true; else delete t[key];

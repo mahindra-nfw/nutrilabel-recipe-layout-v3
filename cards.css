@@ -498,3 +498,9 @@ body.hide-links #links .lk, body.hide-links .port { display: none; }
 
 /* Final card header: number of sub-assemblies */
 .rc-stats > .rc-count b { font-size: 13px; }
+
+/* sub-assembly Scaling side: "From Final" columns = scaled from a pinned column on the Final card (read-only) */
+.rc-tbl .scl.fromfinal { background: color-mix(in srgb, var(--final) 10%, transparent); }
+.rc-tbl th.scl.fromfinal { color: var(--final); }
+.rc-tbl th.scl.fromfinal .fin-l { font-size: 10.5px; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text); opacity: .8; margin-top: 1px; }
+.rc-costrow td.scl.fromfinal { background: color-mix(in srgb, var(--final) 10%, var(--subtle)); }

@@ -34,7 +34,7 @@ For Claude's browser preview, `.claude/launch.json` has the config `nutrilabel-v
 
 ## Data model (per tab, saved in localStorage)
 `S = { root, asm: { id: assembly } }`. An assembly has `name, items[{ref:'ing:<id>'|'asm:<id>', amount}], yieldLoss, steps, notes`, plus optional:
-`scaleMode/scaleTarget/portionSize/portionCount/baseTarget`, `scalePins[{id,mode,target,size,count,showCost}]`, `activePin`, `scaleShowCost` / `subShowCost` (g|$ switch), `pulled{subId:true}` (Final only: rows pulled into its Sub portions column),
+`scaleMode/scaleTarget/portionSize/portionCount/baseTarget`, `scalePins[{id,mode,target,size,count,showCost}]`, `activePin`, `scaleShowCost` / `subShowCost` (g|$ switch), `pulled{subId:true}` (Final only: rows pulled into its Sub portions column), `finShowCost{fin-<pinId>:true}` (g|$ for "From Final" columns: each pinned column on the Final card is scaled down into every sub-assembly's Scaling side, computed in `computeFlows()`, never stored),
 `packaging[{id,name,weight,cost,l,w,h,unit}]`, `labor[{id,name,minutes,people,rate}]`, `face` ('scale' = Scaling side shown), `collapsed`, `x/y` (board position).
 
 localStorage keys (all prefixed `nlv3_`): `cards_book` (all tabs), `favorites`, `custom_ingredients`, `prices`, `theme`, `sheet_prefs`, `side_hidden`, `panel_widths`, `card_clipboard`, `labor_rate`, `scale_style`, `hide_links`, `unit_sys` (metric|imperial) + `unit` (auto|g|kg|oz|lb): display only; weights are always stored in grams and prices in $/kg. Auto switches g→kg at 1000 g and oz→lb at 16 oz; a weight box keeps its unit while focused (`fieldUnit`).
