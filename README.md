@@ -2,7 +2,7 @@
 
 Recipe / assembly builder for chef R&D: linked assembly cards, weights, yield, baker %, scaling, costing, packaging, labor and nutrition facts. Zero dependencies: plain HTML, CSS and JavaScript.
 
-**Live site:** https://mahindra-nfw.github.io/nutrilabel-recipe-layout-v3/
+**Live site:** https://mahindra-nwf.github.io/nutrilabel-recipe-layout-v3/
 
 ## Set up on a new laptop
 1. Install **Git**: https://git-scm.com/downloads
@@ -10,7 +10,7 @@ Recipe / assembly builder for chef R&D: linked assembly cards, weights, yield, b
 3. Install the **GitHub CLI** and sign in (used for pushing): https://cli.github.com, then run `gh auth login`
 4. Get the code:
    ```
-   git clone https://github.com/mahindra-nfw/nutrilabel-recipe-layout-v3.git
+   git clone https://github.com/mahindra-nwf/nutrilabel-recipe-layout-v3.git
    cd nutrilabel-recipe-layout-v3
    ```
 5. Run it: `npm start` (or double-click `start.bat` on Windows), then open http://localhost:5181

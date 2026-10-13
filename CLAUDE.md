@@ -2,9 +2,9 @@
 
 R&D recipe / assembly builder for chefs at Northwest Frozen. Owner: Mahindra (Admin). The app is a UI prototype used for testing with chefs and a client, so clarity for non-technical users matters more than code cleverness.
 
-- Repo: `mahindra-nfw/nutrilabel-recipe-layout-v3` (PUBLIC; served by GitHub Pages from `main`)
-- Live: https://mahindra-nfw.github.io/nutrilabel-recipe-layout-v3/
-- Commits are authored as GitHub user `mahindra-nfw` (repo owner), with the noreply email `330545866+mahindra-nfw@users.noreply.github.com`. Older commits are by `mahindra89`.
+- Repo: `mahindra-nwf/nutrilabel-recipe-layout-v3` (PUBLIC; served by GitHub Pages from `main`)
+- Live: https://mahindra-nwf.github.io/nutrilabel-recipe-layout-v3/
+- Commits are authored as GitHub user `mahindra-nwf` (repo owner), with the noreply email `330545866+mahindra-nwf@users.noreply.github.com`. Older commits are by `mahindra89`.
 
 ## Working rules (from the user)
 - **Only commit/push when the user says so** ("push it", "push the changes"). Otherwise leave changes local and say they are not pushed.
@@ -22,7 +22,7 @@ For Claude's browser preview, `.claude/launch.json` has the config `nutrilabel-v
 2. Bump the cache stamp on every `?v=` in `index.html` (all five links share one stamp, format `YYYYMMDDhhmm`):
    `sed -i -E 's/\?v=[0-9]+/?v=202601011200/g' index.html` (use the current date/time)
 3. Commit with a plain-English message, then push. Check the Pages build:
-   `gh api repos/mahindra-nfw/nutrilabel-recipe-layout-v3/pages/builds/latest --jq '.status+" "+.commit'`
+   `gh api repos/mahindra-nwf/nutrilabel-recipe-layout-v3/pages/builds/latest --jq '.status+" "+.commit'`
 
 ## Code map
 - `index.html` — page shell, top bar, side panel, sheet view, split view (`#split`), theme + one-time `nlv2_`→`nlv3_` storage migration.
@@ -44,5 +44,5 @@ Data lives in the browser per site address (localhost and the live site are sepa
 Use the browser preview at http://localhost:5181. Drive it with small JS checks (click buttons, read the DOM) and screenshots. Clear test data afterwards (`localStorage.removeItem('nlv3_cards_book')`) so the user's view returns to the sample.
 
 ## History
-- Older UI Lab with Layouts A/B/C: `mahindra-nfw/nutrilabel-recipe-layout` (separate repo; known unfixed bugs there, untouched unless asked).
+- Older UI Lab with Layouts A/B/C: `mahindra-nwf/nutrilabel-recipe-layout` (separate repo; known unfixed bugs there, untouched unless asked).
 - Tags: `checkpoint-before-scaling-view` = everything before the Building/Scaling card sides; `checkpoint-before-final-scaling` = everything before Final-assembly scaling (pull from sub-assemblies, production run).
