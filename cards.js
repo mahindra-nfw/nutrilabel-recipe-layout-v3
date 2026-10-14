@@ -216,6 +216,7 @@
         <div class="rc-titlebar">
           <span class="sv-grip" data-grip="${id}" title="Drag to move this card up or down">⠿</span>
           <input class="rc-title" data-fk="title-${id}" data-title="${id}" value="${NL.esc(a.name)}">
+          ${(v => v ? `<button class="rc-var on" data-var="${id}" title="Variations of this card: ${a.vars.list.length}. In use: ${NL.esc(v.name)}. Click to switch, compare or add one">${NL.esc(v.name)} <span class="rc-var-n">${a.vars.list.length}</span> ▾</button>` : `<button class="rc-var" data-var="${id}" title="Variations: try a change on this card (less salt, another miso…) without losing what you have">Variations</button>`)(varsOf(a) && varInUse(a))}
           <button class="rc-ib sv-only" data-move="${id}:-1" title="Move card up">↑</button><button class="rc-ib sv-only" data-move="${id}:1" title="Move card down">↓</button>
           <span class="rc-face"><button class="${scaling ? '' : 'on'}" data-face="${id}:build" title="Build the recipe: weights, %, packaging, labor, procedure">Building</button><button class="${scaling ? 'on' : ''}" data-face="${id}:scale" ${c.batch > 0 ? `title="${scaleStyle === 'flip' ? 'Flip to the scaling side' : 'Show scaling, hide building columns'}: scaled and pinned columns with cost"` : 'disabled title="Add ingredient weights first"'}>Scaling</button></span>
           <button class="rc-ib" data-collapse="${id}" title="${a.collapsed ? 'Expand' : 'Collapse'}">${a.collapsed ? '▸' : '▾'}</button>
@@ -223,6 +224,7 @@
           <button class="rc-ib" data-copycard="${id}" title="Copy this card${descendants(id).size ? ' (with its sub-assembly cards)' : ''}. Paste into any tab with 📋 Paste card or Ctrl+V">⧉</button>
           <button class="rc-ib del" data-delcard="${id}" title="Delete this card">🗑</button>
         </div>
+        ${varsOf(a) && varInUse(a).note ? `<div class="rc-varnote" data-var="${id}" title="Note on the variation in use. Click to see all variations"><b>${NL.esc(varInUse(a).name)}</b> · ${NL.esc(varInUse(a).note)}</div>` : ''}
         <div class="rc-stats">
           <div><b>${NL.ws(c.batch, 1)}</b><span>${isRoot ? 'Portion' : 'Batch'}</span></div>
           ${isRoot ? (n => `<div class="rc-count" title="Sub-assemblies in this final assembly"><b>${n}</b><span>Sub-assembl${n === 1 ? 'y' : 'ies'}</span></div>`)(a.items.filter(it => subIdOf(it.ref)).length) : ''}
@@ -752,7 +754,7 @@
       dx = Math.round(ctr.x - CARDW / 2 - (top.x || 0)); dy = Math.round(ctr.y - 60 - (top.y || 0));
     }
     for (const k of keys) {
-      const n = JSON.parse(JSON.stringify(clip.cards[k])); delete n.kind; delete n.favId; delete n._place;
+      const n = JSON.parse(JSON.stringify(clip.cards[k])); delete n.kind; delete n.favId; delete n._place; delete n.vars; // a copy starts with the variation in use only
       n.items = n.items.filter(it => !subIdOf(it.ref) || map[subIdOf(it.ref)]).map(it => { const s = subIdOf(it.ref); return s ? { ...it, ref: 'asm:' + map[s] } : it; });
       if (k === clip.top) n.name = n.name + suffix;
       if (!n.color || n.color === ROOT_COLOR) n.color = COLORS.find(c => !used.has(c)) || COLORS[Object.keys(S.asm).length % COLORS.length];
@@ -820,6 +822,184 @@
   }
   $('#favList').addEventListener('dragstart', e => { const it = e.target.closest('[data-favdrag]'); if (it) { e.dataTransfer.setData('text/plain', 'fav:' + it.dataset.favdrag); e.dataTransfer.effectAllowed = 'copy'; } });
   addEventListener('storage', e => { if (e.key === FAV) { favCache = null; drawFavs(); render(); } });
+
+  // ---------- variations: try changes on one card without losing the original; one variation is "in use" ----------
+  // a.vars = { on: <id in use>, list: [{ id, name, note, at, data? }] }. The card's own fields always hold the variation
+  // in use, so calc, cost, scaling, labels, links and the sheet read it exactly as before. The other variations keep a copy
+  // of VAR_FIELDS in `data`. Name, color, position, scaling columns and favorites stay with the card, not the variation.
+  const VAR_FIELDS = ['items', 'yieldLoss', 'steps', 'notes', 'packaging', 'labor', 'baseName'];
+  const clone = x => JSON.parse(JSON.stringify(x));
+  const pickVar = a => Object.fromEntries(VAR_FIELDS.filter(f => a[f] !== undefined).map(f => [f, clone(a[f])]));
+  const varsOf = a => (a?.vars?.list?.length > 1 ? a.vars : null);
+  const varInUse = a => a?.vars?.list?.find(v => v.id === a.vars.on) || null;
+  const varData = (id, v) => (v.id === A(id).vars.on ? pickVar(A(id)) : v.data);
+  // a variation's rows, minus links that no longer work here (card deleted, or the link would loop back)
+  const cleanItems = (id, items, asm = S.asm) => (items || []).filter(it => { const s = subIdOf(it.ref); return !s || (asm[s] && !wouldCycle(id, s)); });
+  function ensureVars(a) {
+    if (!a.vars?.list?.length) a.vars = { on: 'v1', list: [{ id: 'v1', name: 'Original', note: '', at: Date.now() }] };
+    return a.vars;
+  }
+  // a small two-field form (name + note), styled like NL.prompt
+  function varForm(title, name = '', note = '') {
+    return new Promise(resolve => {
+      const ov = document.createElement('div'); ov.className = 'nl-prompt-ov';
+      ov.innerHTML = `<form class="nl-prompt var-form"><div class="nl-prompt-label">${NL.esc(title)}</div>
+        <label>Name<input class="nl-prompt-input" name="n" value="${NL.esc(name)}" maxlength="60" placeholder="e.g. Less salt"></label>
+        <label>Note <small>what changed, how it tasted</small><textarea class="nl-prompt-input" name="t" rows="3" maxlength="500" placeholder="e.g. Soy sauce 20 g → 12 g. Tasted better, less harsh.">${NL.esc(note)}</textarea></label>
+        <div class="nl-prompt-btns"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-x>Cancel</button></div></form>`;
+      document.body.appendChild(ov);
+      const f = ov.querySelector('form'), done = v => { ov.remove(); resolve(v); };
+      f.n.focus(); f.n.select();
+      f.onsubmit = e => { e.preventDefault(); done({ name: f.n.value.trim() || name || 'Untitled', note: f.t.value.trim() }); };
+      ov.querySelector('[data-x]').onclick = () => done(null);
+      ov.addEventListener('pointerdown', e => { if (e.target === ov) done(null); });
+      ov.addEventListener('keydown', e => { if (e.key === 'Escape') done(null); if (e.key === 'Enter' && e.ctrlKey) f.requestSubmit(); });
+    });
+  }
+  async function newVar(id) {
+    if (onScaleSide(id)) return NL.toast('This card is showing its Scaling side. Press Building first');
+    const a = A(id), vs = ensureVars(a), from = varInUse(a);
+    const r = await varForm(`New variation of “${a.name}”, starting from “${from.name}”`, 'Variation ' + (vs.list.length + 1), '');
+    if (!r) { if (vs.list.length < 2) delete a.vars; return; }
+    from.data = pickVar(a); // keep the one we leave exactly as it is
+    const v = { id: NL.uid('v'), name: r.name, note: r.note, at: Date.now() };
+    vs.list.push(v); vs.on = v.id;
+    render(); commit();
+    NL.toast(`Now editing “${v.name}”. “${from.name}” is kept; switch back any time with the Variations button`);
+  }
+  function useVar(id, vid) {
+    const a = A(id), vs = a.vars, to = vs?.list.find(v => v.id === vid);
+    if (!to || vs.on === vid) return;
+    if (onScaleSide(id)) return NL.toast('This card is showing its Scaling side. Press Building first');
+    const from = varInUse(a); from.data = pickVar(a);
+    const data = clone(to.data || {}), before = (data.items || []).length;
+    data.items = cleanItems(id, data.items);
+    VAR_FIELDS.forEach(f => { if (data[f] === undefined) delete a[f]; else a[f] = data[f]; });
+    a.items = a.items || []; a.steps = a.steps || [];
+    delete to.data; vs.on = vid;
+    render(); commit();
+    NL.toast(`Using “${to.name}” on ${a.name}${before > a.items.length ? `. ${before - a.items.length} link(s) to cards that are gone were left out` : ''}`);
+  }
+  async function editVar(id, vid) {
+    const v = A(id).vars.list.find(x => x.id === vid); if (!v) return;
+    const r = await varForm('Rename or add a note', v.name, v.note);
+    if (!r) return;
+    v.name = r.name; v.note = r.note; render(); commit();
+  }
+  function deleteVar(id, vid) {
+    const a = A(id), v = a.vars.list.find(x => x.id === vid);
+    if (!v || v.id === a.vars.on) return;
+    if (!confirm(`Delete the variation “${v.name}”? Undo (Ctrl+Z) can bring it back.`)) return;
+    a.vars.list = a.vars.list.filter(x => x.id !== vid);
+    if (a.vars.list.length < 2) delete a.vars;
+    render(); commit();
+  }
+  // numbers for one variation: this card, and what the Final ends up as with it in use
+  function varStats(id, v) {
+    const T = clone(S), t = T.asm[id];
+    if (v.id !== t.vars.on) { const d = clone(v.data || {}); d.items = cleanItems(id, d.items); VAR_FIELDS.forEach(f => { if (d[f] === undefined) delete t[f]; else t[f] = d[f]; }); t.items = t.items || []; }
+    const c = NL.calc(T), k = NL.cost(T, c), isRoot = id === T.root;
+    const full = aid => k[aid] ? k[aid].batch + (T.asm[aid].packaging || []).reduce((s, r) => s + (+r.cost || 0), 0) + laborOf(T.asm[aid]) : null;
+    const fin = T.root && T.asm[T.root] && c[T.root] ? { kcal: c[T.root].perG[0] * c[T.root].yielded, cost: full(T.root) } : null;
+    return {
+      batch: c[id].batch, yielded: c[id].yielded, loss: +t.yieldLoss || 0,
+      kcal: isRoot ? c[id].perG[0] * c[id].yielded : c[id].perG[0] * 100,
+      cost: isRoot ? full(id) : NL.pOut(k[id].perG * 1000), missing: k[id].missing, // per kg or per lb, like the card header
+      fin: isRoot ? null : fin, isRoot, items: t.items, steps: t.steps || [], notes: t.notes || '',
+    };
+  }
+  const when = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  function varMenu(id, anchor) {
+    document.querySelector('.var-menu')?.remove();
+    const a = A(id), vs = ensureVars(a), one = vs.list.length < 2;
+    const r = anchor.getBoundingClientRect(), m = document.createElement('div'); m.className = 'var-menu';
+    const kU = id === S.root ? 'kcal / portion' : 'kcal / 100 g', cU = id === S.root ? '/ portion' : '/ ' + NL.pUnit();
+    m.innerHTML = `<div class="var-head"><b>Variations</b> of ${NL.esc(a.name)}
+        <div class="faint">Try changes on this card without losing what you had. The one in use feeds the totals, the label and scaling.</div></div>
+      <div class="var-list">${vs.list.map(v => {
+        const s = varStats(id, v), on = v.id === vs.on;
+        return `<div class="var-row ${on ? 'on' : ''}" data-vuse="${id}:${v.id}" title="${on ? 'In use' : 'Click to use this variation'}">
+          <span class="var-radio">${on ? '●' : '○'}</span>
+          <div class="var-main"><div><b>${NL.esc(v.name)}</b>${on ? ' <span class="var-badge">in use</span>' : ''}</div>
+            <div class="var-note">${v.note ? NL.esc(v.note) : '<i>No note</i>'}</div>
+            <div class="var-meta">${Math.round(s.kcal)} ${kU} · ${NL.money(s.cost)}${s.missing ? '*' : ''} ${cU}${s.fin ? ` · <span title="${NL.esc(A(S.root).name)} with this variation in use">Final ${Math.round(s.fin.kcal)} kcal, ${NL.money(s.fin.cost)}</span>` : ''} · ${when(v.at)}</div></div>
+          <button class="var-b" data-vedit="${id}:${v.id}" title="Rename or edit the note">✎</button>
+          ${on ? '<span class="var-b"></span>' : `<button class="var-b x" data-vdel="${id}:${v.id}" title="Delete this variation">×</button>`}
+        </div>`;
+      }).join('')}</div>
+      <div class="var-foot"><button class="btn primary sm" data-vnew="${id}">＋ New variation from “${NL.esc(varInUse(a).name)}”</button>
+        ${one ? '' : `<button class="btn sm" data-vcmp="${id}">⇄ Compare</button>`}</div>`;
+    if (one) delete a.vars; // only "Original" so far: nothing is saved until a second variation exists
+    m.style.left = Math.max(8, Math.min(r.left, innerWidth - 440)) + 'px'; m.style.top = Math.min(r.bottom + 6, innerHeight - 120) + 'px';
+    document.body.appendChild(m);
+    const off = e => { if (!m.contains(e.target) && !e.target.closest('.nl-prompt-ov')) close(); };
+    const close = () => { m.remove(); removeEventListener('pointerdown', off, true); };
+    setTimeout(() => addEventListener('pointerdown', off, true));
+    m.onclick = e => {
+      const b = e.target.closest('[data-vedit],[data-vdel],[data-vnew],[data-vcmp],[data-vuse]'); if (!b) return;
+      close();
+      const d = b.dataset;
+      if (d.vedit) return editVar(...d.vedit.split(':'));
+      if (d.vdel) return deleteVar(...d.vdel.split(':'));
+      if (d.vnew) return newVar(d.vnew);
+      if (d.vcmp) return compareVars(d.vcmp);
+      if (d.vuse) return useVar(...d.vuse.split(':'));
+    };
+  }
+  // side by side: two variations of one card (rows, totals, and the effect on the Final)
+  function compareVars(id) {
+    const a = A(id); if (!varsOf(a)) return;
+    const list = a.vars.list;
+    let L = (list.find(v => v.id !== a.vars.on) || list[0]).id, R = a.vars.on;
+    const ov = document.createElement('div'); ov.className = 'cmp-ov';
+    document.body.appendChild(ov);
+    const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    const close = () => { ov.remove(); removeEventListener('keydown', esc, true); };
+    addEventListener('keydown', esc, true);
+    const near = (x, y, d) => Math.abs((x ?? 0) - (y ?? 0)) < 10 ** -d / 2;
+    const delta = (v, b, unit, d, money) => {
+      if (v == null || b == null) return v == null ? '<span class="cmp-d dn">not used</span>' : '<span class="cmp-d up">new</span>';
+      if (near(v, b, d)) return '<span class="cmp-same">=</span>';
+      const dv = v - b; return `<span class="cmp-d ${dv > 0 ? 'up' : 'dn'}">${dv > 0 ? '▲ +' : '▼ -'}${money ? NL.money(Math.abs(dv)) : NL.fmt(Math.abs(dv), d) + unit}${b ? ` (${dv > 0 ? '+' : ''}${NL.fmt(dv / b * 100, 1)}%)` : ''}</span>`;
+    };
+    const nameOfRef = ref => { const s = subIdOf(ref); return s ? (A(s)?.name || 'Removed card') + ' <small>sub-assembly</small>' : NL.esc(NL.ingMap[ref.slice(4)]?.name || ref); };
+    function draw() {
+      const vL = list.find(v => v.id === L), vR = list.find(v => v.id === R), sL = varStats(id, vL), sR = varStats(id, vR);
+      const money = Object.assign(v => NL.money(v), { money: true });
+      const row = (label, x, y, unit = '', d = 1, fmtv = v => NL.fmt(v, d) + unit) => `<tr class="${near(x, y, d) ? 'same' : 'diff'}"><th>${label}</th>
+        <td>${x == null ? '<span class="cmp-na">—</span>' : `<b>${fmtv(x)}</b>`}</td><td>${y == null ? '<span class="cmp-na">—</span>' : `<b>${fmtv(y)}</b>`}<div>${delta(y, x, unit, d, fmtv.money)}</div></td></tr>`;
+      // weight rows: both sides in one unit (the unit of the larger value), like Compare assemblies
+      const wrow = (label, x, y) => { const u = NL.unitForAll([x, y].filter(v => v != null)), k = NL.UNITS[u]; return row(label, x == null ? null : x / k, y == null ? null : y / k, ' ' + u, u === 'g' ? 1 : 3); };
+      const amt = items => { const m = new Map(); items.forEach(it => m.set(it.ref, (m.get(it.ref) || 0) + (+it.amount || 0))); return m; };
+      const mL = amt(sL.items), mR = amt(sR.items), refs = [...new Set([...mL.keys(), ...mR.keys()])];
+      const sec = t => `<tr><td class="cmp-h" colspan="3">${t}</td></tr>`;
+      const opts = sel => list.map(v => `<option value="${v.id}" ${v.id === sel ? 'selected' : ''}>${NL.esc(v.name)}${v.id === a.vars.on ? ' (in use)' : ''}</option>`).join('');
+      ov.innerHTML = `<div class="cmp var-cmp">
+        <div class="cmp-top"><b>⇄ Compare variations · ${NL.esc(a.name)}</b><span class="spacer"></span><button class="btn ghost cmp-x" title="Close (Esc)">×</button></div>
+        <div class="var-cmp-pick"><label>Baseline <select data-side="L">${opts(L)}</select></label><span>vs</span><label><select data-side="R">${opts(R)}</select></label>
+          ${R !== a.vars.on ? `<button class="btn sm" data-usecmp="${R}">Use “${NL.esc(vR.name)}”</button>` : ''}</div>
+        <div class="cmp-scroll"><table class="cmp-tbl"><thead><tr><th></th>
+          <th>${NL.esc(vL.name)}<small>baseline</small><div class="var-cmp-note">${NL.esc(vL.note || '')}</div></th>
+          <th>${NL.esc(vR.name)}${R === a.vars.on ? '<small>in use</small>' : ''}<div class="var-cmp-note">${NL.esc(vR.note || '')}</div></th></tr></thead>
+        <tbody>${sec('This card')}
+          ${wrow('Batch weight', sL.batch, sR.batch)}${wrow('Final weight (yield)', sL.yielded, sR.yielded)}${row('Cooking loss', sL.loss, sR.loss, '%', 1)}
+          ${row(sL.isRoot ? 'Calories per portion' : 'Calories per 100 g', sL.kcal, sR.kcal, ' kcal', 0)}
+          ${row(sL.isRoot ? 'Cost per portion' : 'Cost per ' + NL.pUnit(), sL.cost, sR.cost, '', 2, money)}
+          ${sL.fin ? sec('Effect on the Final · ' + NL.esc(A(S.root).name)) + row('Calories per portion', sL.fin.kcal, sR.fin.kcal, ' kcal', 0) + row('Cost per portion', sL.fin.cost, sR.fin.cost, '', 2, money) : ''}
+          ${sec('Rows on this card (weights as typed)')}
+          ${refs.map(ref => wrow(nameOfRef(ref), mL.has(ref) ? mL.get(ref) : null, mR.has(ref) ? mR.get(ref) : null)).join('')}
+          ${sec('Procedure and notes')}
+          <tr class="${JSON.stringify(sL.steps) === JSON.stringify(sR.steps) ? 'same' : 'diff'}"><th>Procedure</th><td class="var-txt">${sL.steps.map(s => NL.esc(s)).join('<br>') || '—'}</td><td class="var-txt">${sR.steps.map(s => NL.esc(s)).join('<br>') || '—'}</td></tr>
+          <tr class="${sL.notes === sR.notes ? 'same' : 'diff'}"><th>Notes</th><td class="var-txt">${NL.esc(sL.notes) || '—'}</td><td class="var-txt">${NL.esc(sR.notes) || '—'}</td></tr>
+        </tbody></table></div>
+        <div class="cmp-foot">▲ / ▼ show the difference from the baseline. Weights are the amounts typed on this card.</div></div>`;
+      ov.querySelector('.cmp-x').onclick = close;
+      ov.querySelectorAll('[data-side]').forEach(s => s.onchange = () => { if (s.dataset.side === 'L') L = s.value; else R = s.value; draw(); });
+      const u = ov.querySelector('[data-usecmp]'); if (u) u.onclick = () => { useVar(id, u.dataset.usecmp); R = a.vars.on; draw(); };
+    }
+    ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+    draw();
+  }
 
   function pasteCard() {
     const clip = readClip(); if (!clip?.cards) return NL.toast('Nothing copied yet');
@@ -1265,6 +1445,7 @@
       });
       return;
     }
+    if ((b = q('[data-var]'))) return varMenu(b.dataset.var, b);
     if ((b = q('[data-copycard]'))) return copyCard(b.dataset.copycard);
     if ((b = q('[data-fav]'))) { const id = b.dataset.fav; return favOf(id) ? favMenu(id, b) : saveFav(id); }
     if ((b = q('[data-favadd]'))) return useFav(b.dataset.favadd, null);
