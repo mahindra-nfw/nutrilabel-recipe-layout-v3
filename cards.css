@@ -538,3 +538,25 @@ body.hide-links #links .lk, body.hide-links .port { display: none; }
 .var-cmp-pick select { border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; background: var(--input); color: var(--text); }
 .var-cmp-note { font-size: 11.5px; font-weight: 400; color: var(--muted); white-space: normal; max-width: 260px; margin-top: 2px; }
 .cmp-tbl td.var-txt { text-align: left; white-space: normal; font-size: 12px; color: var(--text); max-width: 300px; }
+
+/* retailers: ingredients a retailer does not allow (side panel list + ⛔ flags on cards) */
+.retail-block { max-height: 30vh; overflow: auto; }
+.retail-h { display: flex; align-items: center; justify-content: space-between; }
+.retail-add { border: 0; background: none; color: var(--accent); font-size: 15px; font-weight: 700; cursor: pointer; padding: 0 4px; line-height: 1; }
+.rt-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 6px; }
+.rt-row:hover { background: var(--hover); }
+.rt-row:hover .fav-b.x { visibility: visible; }
+.rt-nm { flex: 1; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-row .faint { font-size: 11px; white-space: nowrap; }
+.rt.off .rt-nm { color: var(--faint); text-decoration: line-through; }
+.rt-bans { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 4px 8px 26px; }
+.rt-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 999px; background: var(--danger-soft); color: var(--danger); font-size: 11.5px; font-weight: 600; }
+.rt-chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; opacity: .7; }
+.rt-chip button:hover { opacity: 1; }
+.rt-in { width: 100%; font-size: 12px; padding: 4px 8px; }
+.ban-tag { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--danger-soft); color: var(--danger); font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.ban-tag.soft { background: transparent; border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); }
+.rc-tbl tr.banned td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.rc-ban { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); font-size: 12px; line-height: 1.45; }
+.rc-ban span { opacity: .8; }
+.tr-ban { font-size: 11px; margin-left: 2px; }

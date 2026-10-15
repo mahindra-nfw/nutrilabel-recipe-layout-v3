@@ -49,6 +49,36 @@
   const onScaleSide = id => A(id)?.face === 'scale' && calc?.[id]?.batch > 0;
   const wouldCycle = (parent, child) => parent === child || descendants(child).has(parent);
 
+  // ---------- retailers: ingredients each retailer does not allow ----------
+  // The retailer list is kept per browser (like favorites); each recipe tab checks every retailer
+  // except the ones unticked for it (S.retailOff). A ban matches whole words of an ingredient's name.
+  const RETAIL = 'nlv3_retailers';
+  const readRetail = () => { try { return JSON.parse(localStorage.getItem(RETAIL)) || []; } catch { return []; } };
+  const saveRetail = list => { try { localStorage.setItem(RETAIL, JSON.stringify(list)); } catch { } };
+  const retailOn = r => !(S.retailOff || []).includes(r.id);
+  const reEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let banRules = [], banMemo = {};
+  function computeBans() {
+    banMemo = {};
+    banRules = readRetail().filter(retailOn).flatMap(r => r.bans.map(b => ({ shop: r.name, re: new RegExp(`(^|[^a-z0-9])${reEsc(b.toLowerCase())}($|[^a-z0-9])`) })));
+  }
+  // retailers that ban this ingredient
+  const bansFor = ing => { const n = (ing?.name || '').toLowerCase(); return n && banRules.length ? [...new Set(banRules.filter(x => x.re.test(n)).map(x => x.shop))] : []; };
+  // every banned ingredient in a card, including inside its sub-assemblies: [{ name, shops }]
+  function banHits(id) {
+    if (banMemo[id]) return banMemo[id];
+    if (!banRules.length || !A(id)) return [];
+    banMemo[id] = []; // guards against loops while walking
+    const out = new Map();
+    for (const it of A(id).items) {
+      const sid = subIdOf(it.ref), ing = sid ? null : NL.ingMap[it.ref.slice(4)];
+      const list = sid ? banHits(sid) : (sh => sh.length ? [{ name: ing?.name || it.ref, shops: sh }] : [])(bansFor(ing));
+      for (const h of list) out.set(h.name, { name: h.name, shops: [...new Set([...(out.get(h.name)?.shops || []), ...h.shops])] });
+    }
+    return (banMemo[id] = [...out.values()]);
+  }
+  const banTag = shops => shops.length ? `<span class="ban-tag" title="Not allowed by ${NL.esc(shops.join(', '))}">⛔ ${NL.esc(shops.join(', '))}</span>` : '';
+
   // ---------- rendering ----------
   // The Final card's pinned columns flow down: for each one, how many grams of every sub-assembly it needs
   // (Final amount x its scale, then through each sub-assembly's own recipe and cooking loss). Read-only.
@@ -71,7 +101,7 @@
     });
   }
   function paintLeft() {
-    calc = NL.calc(S); cost = NL.cost(S, calc); computeFlows();
+    calc = NL.calc(S); cost = NL.cost(S, calc); computeFlows(); computeBans();
     if (view === 'sheet') {
       const ord = sheetOrder(); orderIdx = Object.fromEntries(ord.map((id, k) => [id, k])); depthMap = depths();
       cardsEl.innerHTML = ord.length ? ord.map(cardHTML).join('') : SHEET_EMPTY;
@@ -79,6 +109,7 @@
     stickCols(cardsEl);
     drawLinks();
     drawTree();
+    drawRetail();
     drawNut();
     $('#recipeTitle').textContent = hasFinal() ? A(S.root).name : (S.draftName || 'Untitled assembly');
     $('#emptyHint').hidden = Object.keys(S.asm).length > 0;
@@ -202,10 +233,10 @@
       const amt = `<td class="r w"><input ${RO}class="num ${aerr ? 'bad' : ''}" inputmode="decimal" data-fk="amt-${id}-${idx}" data-amt="${id}:${idx}" ${wf(`amt-${id}-${idx}`, it.amount).a} value="${wf(`amt-${id}-${idx}`, it.amount).v}" ${aerr ? `title="${NL.esc(aerr)}"` : ''}><span class="u">${wf(`amt-${id}-${idx}`, it.amount).u}</span></td>`;
       const delL = `<button class="rc-del rc-del-l" data-delrow="${id}:${idx}" title="Remove this row">×</button>`, del = '<td class="x"></td>';
       if (sid && A(sid)) {
-        return `<tr class="sub" data-sub="${sid}" style="--rc:${colorOf(sid)}"><td>${delL}<span class="rc-sublink" data-goto="${sid}">${NL.esc(A(sid).name)}</span><span class="rc-see" data-goto="${sid}">see assembly ${view === 'sheet' ? (orderIdx[sid] > orderIdx[id] ? '↓' : '↑') : '→'}</span>${subNote(idx)}</td>${amt}${pct}${del}</tr>`;
+        return `<tr class="sub" data-sub="${sid}" style="--rc:${colorOf(sid)}"><td>${delL}<span class="rc-sublink" data-goto="${sid}">${NL.esc(A(sid).name)}</span><span class="rc-see" data-goto="${sid}">see assembly ${view === 'sheet' ? (orderIdx[sid] > orderIdx[id] ? '↓' : '↑') : '→'}</span>${(h => h.length ? `<span class="ban-tag soft" title="Contains ${NL.esc(h.map(x => `${x.name} (${x.shops.join(', ')})`).join('; '))}">⛔ contains ${h.length} not allowed</span>` : '')(banHits(sid))}${subNote(idx)}</td>${amt}${pct}${del}</tr>`;
       }
       const ing = NL.ingMap[it.ref.slice(4)];
-      return `<tr><td>${delL}${NL.esc(ing?.name || it.ref)}<span class="rc-vendor">${NL.esc(ing?.vendor || '')}</span></td>${amt}${pct}${del}</tr>`;
+      return `<tr${bansFor(ing).length ? ' class="banned"' : ''}><td>${delL}${NL.esc(ing?.name || it.ref)}<span class="rc-vendor">${NL.esc(ing?.vendor || '')}</span>${banTag(bansFor(ing))}</td>${amt}${pct}${del}</tr>`;
     }).join('') || `<tr class="rc-empty"><td colspan="${ncol}">No ingredients yet — use the buttons below or drag from the library</td></tr>`;
     const kcal = Math.round(c.perG[0] * (isRoot ? c.yielded : 100));
     const extra = scaling && !flip ? Math.max(0, pins.length - 2) : 0;
@@ -225,6 +256,7 @@
           <button class="rc-ib del" data-delcard="${id}" title="Delete this card">🗑</button>
         </div>
         ${varsOf(a) && varInUse(a).note ? `<div class="rc-varnote" data-var="${id}" title="Note on the variation in use. Click to see all variations"><b>${NL.esc(varInUse(a).name)}</b> · ${NL.esc(varInUse(a).note)}</div>` : ''}
+        ${(h => h.length ? `<div class="rc-ban" title="Retailers are set in the side panel">⛔ Not allowed by a retailer: ${h.map(x => `<b>${NL.esc(x.name)}</b> <span>(${NL.esc(x.shops.join(', '))})</span>`).join(', ')}</div>` : '')(banHits(id))}
         <div class="rc-stats">
           <div><b>${NL.ws(c.batch, 1)}</b><span>${isRoot ? 'Portion' : 'Batch'}</span></div>
           ${isRoot ? (n => `<div class="rc-count" title="Sub-assemblies in this final assembly"><b>${n}</b><span>Sub-assembl${n === 1 ? 'y' : 'ies'}</span></div>`)(a.items.filter(it => subIdOf(it.ref)).length) : ''}
@@ -432,6 +464,7 @@
   }
 
   function drawTree() {
+    computeBans(); // the tree is the left tab's; the split pane may have painted last
     const seen = new Set();
     // BOM-style tree: `rails` says, for each ancestor level, whether a vertical line continues below this row
     const item = (id, rails = [], last = true, depth = 0) => {
@@ -440,7 +473,7 @@
       const kids = a.items.map(it => subIdOf(it.ref)).filter(s => s && A(s));
       const guide = depth ? `<span class="tg">${rails.map(r => `<i class="${r ? 'v' : ''}"></i>`).join('')}<i class="${last ? 'l' : 't'}"></i></span>` : '';
       return `<div class="tr-item ${id === S.root ? 'root' : ''}" data-goto="${id}">${guide}
-        <span class="sw" style="background:${colorOf(id)}"></span><span class="nm">${NL.esc(a.name)}</span><span class="faint">${nIng} ing</span></div>` +
+        <span class="sw" style="background:${colorOf(id)}"></span><span class="nm">${NL.esc(a.name)}</span>${banHits(id).length ? '<span class="tr-ban" title="Has ingredients a retailer does not allow">⛔</span>' : ''}<span class="faint">${nIng} ing</span></div>` +
         (depth < 12 ? kids.map((k, i) => item(k, depth ? [...rails, !last] : [], i === kids.length - 1, depth + 1)).join('') : '');
     };
     let html = hasFinal() ? item(S.root, 0) : '', extra = '';
@@ -661,6 +694,7 @@
     if (value.startsWith('asm:') && a.items.some(it => it.ref === value)) return NL.toast('Already linked');
     a.items.push({ ref: value, amount: 0 });
     render(); commit();
+    if (value.startsWith('ing:')) { const ing = NL.ingMap[value.slice(4)], sh = bansFor(ing); if (sh.length) NL.toast(`⛔ ${ing.name} is not allowed by ${sh.join(', ')}`); }
     if (focus) focusAmt(id, a.items.length - 1);
   }
   // Chefs enter the weighed final weight; yield loss is derived from it (only yieldLoss is stored).
@@ -811,6 +845,44 @@
     setTimeout(() => addEventListener('pointerdown', off, true));
     m.onclick = e => { const b = e.target.closest('[data-fm]'); if (!b) return; close(); if (b.dataset.fm === 'up') saveFav(id); else removeFav(A(id).favId); };
   }
+  const retailOpen = new Set(); // retailers expanded in the side panel
+  function drawRetail() {
+    const list = readRetail();
+    $('#retailList').innerHTML = list.length ? list.map(r => `<div class="rt ${retailOn(r) ? '' : 'off'}">
+        <div class="rt-row"><input type="checkbox" data-rton="${r.id}" ${retailOn(r) ? 'checked' : ''} title="Check this recipe against ${NL.esc(r.name)}"><button class="rt-nm" data-rtopen="${r.id}" title="Show or edit the ingredients ${NL.esc(r.name)} does not allow">${retailOpen.has(r.id) ? '▾' : '▸'} ${NL.esc(r.name)}</button><span class="faint">${r.bans.length} not allowed</span><button class="fav-b x" data-rtdel="${r.id}" title="Remove this retailer">×</button></div>
+        ${retailOpen.has(r.id) ? `<div class="rt-bans">${r.bans.map((b, k) => `<span class="rt-chip">${NL.esc(b)}<button data-rtban="${r.id}:${k}" title="Remove">×</button></span>`).join('')}<input class="txt rt-in" data-rtadd="${r.id}" list="rtNames" placeholder="Type an ingredient, press Enter"></div>` : ''}
+      </div>`).join('') + `<datalist id="rtNames">${[...new Set(NL.INGREDIENTS.map(i => i.name))].map(n => `<option value="${NL.esc(n)}">`).join('')}</datalist><div class="fav-empty">Ticked retailers are checked in this recipe.</div>`
+      : '<div class="fav-empty">Add a retailer (＋) and the ingredients it does not allow. Cards flag them with ⛔.</div>';
+  }
+  $('#retailAdd').onclick = () => NL.prompt('Retailer name (e.g. Aldi)', '').then(v => {
+    const name = (v || '').trim(); if (!name) return;
+    const list = readRetail(), r = { id: NL.uid('r'), name, bans: [] };
+    list.push(r); saveRetail(list); retailOpen.add(r.id); render();
+    $(`#retailList [data-rtadd="${r.id}"]`)?.focus();
+  });
+  $('#retailList').addEventListener('click', e => {
+    const b = e.target.closest('[data-rtopen],[data-rtdel],[data-rtban]'); if (!b) return;
+    const list = readRetail(), d = b.dataset;
+    if (d.rtopen) { retailOpen.has(d.rtopen) ? retailOpen.delete(d.rtopen) : retailOpen.add(d.rtopen); return drawRetail(); }
+    if (d.rtdel) { const r = list.find(x => x.id === d.rtdel); if (!r || !confirm(`Remove the retailer "${r.name}" and its list?`)) return; saveRetail(list.filter(x => x !== r)); return render(); }
+    const [rid, k] = d.rtban.split(':'), r = list.find(x => x.id === rid); if (!r) return;
+    r.bans.splice(+k, 1); saveRetail(list); render();
+  });
+  $('#retailList').addEventListener('change', e => {
+    const id = e.target.dataset?.rton; if (!id) return;
+    const off = new Set(S.retailOff || []); e.target.checked ? off.delete(id) : off.add(id);
+    if (off.size) S.retailOff = [...off]; else delete S.retailOff;
+    render(); commit();
+  });
+  $('#retailList').addEventListener('keydown', e => {
+    const id = e.target.dataset?.rtadd; if (!id || e.key !== 'Enter') return;
+    e.preventDefault();
+    const t = e.target.value.trim(), list = readRetail(), r = list.find(x => x.id === id); if (!t || !r) return;
+    if (!r.bans.some(b => b.toLowerCase() === t.toLowerCase())) r.bans.push(t);
+    saveRetail(list); render();
+    $(`#retailList [data-rtadd="${id}"]`)?.focus();
+  });
+  addEventListener('storage', e => { if (e.key === RETAIL) render(); });
   function drawFavs() {
     const list = readFavs();
     $('#favList').innerHTML = list.length ? list.map(f => {
@@ -1055,7 +1127,7 @@
     document.addEventListener(type, e => { const s = sideOf(e.target); if (s) useSide(s); }, true);
 
   function paintRight() {
-    calc = NL.calc(S); cost = NL.cost(S, calc); computeFlows();
+    calc = NL.calc(S); cost = NL.cost(S, calc); computeFlows(); computeBans();
     const ord = sheetOrder(); orderIdx = Object.fromEntries(ord.map((id, k) => [id, k])); depthMap = depths();
     if (split.card && !S.asm[split.card]) split.card = '';
     const ids = split.card ? [split.card] : ord;

@@ -9,8 +9,8 @@
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('nlv2_')) { const n = 'nlv3_' + k.slice(5); if (localStorage.getItem(n) === null) localStorage.setItem(n, localStorage.getItem(k)); } } } catch (e) { }
   </script>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem('nlv3_theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch (e) { }</script>
-  <link rel="stylesheet" href="shared/base.css?v=202610141624">
-  <link rel="stylesheet" href="cards.css?v=202610141624">
+  <link rel="stylesheet" href="shared/base.css?v=202610151343">
+  <link rel="stylesheet" href="cards.css?v=202610151343">
 </head>
 <body data-layout="cards">
   <header class="topbar">
@@ -45,6 +45,10 @@
       <div class="side-block fav-block">
         <div class="side-h">★ Favorites</div>
         <div id="favList"></div>
+      </div>
+      <div class="side-block retail-block">
+        <div class="side-h retail-h">⛔ Retailers <button class="retail-add" id="retailAdd" title="Add a retailer and the ingredients it does not allow">＋</button></div>
+        <div id="retailList"></div>
       </div>
       <div class="side-block grow">
         <div class="side-h">Ingredient library</div>
@@ -92,8 +96,8 @@
     </section>
     <aside class="nut" id="nut"></aside>
   </main>
-  <script src="shared/data.js?v=202610141624"></script>
-  <script src="shared/engine.js?v=202610141624"></script>
-  <script src="cards.js?v=202610141624"></script>
+  <script src="shared/data.js?v=202610151343"></script>
+  <script src="shared/engine.js?v=202610151343"></script>
+  <script src="cards.js?v=202610151343"></script>
 </body>
 </html>
